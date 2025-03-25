@@ -234,8 +234,8 @@ var NodeMap = class _NodeMap {
     this.filePath = filePath;
     const lines = fileText.split("\n");
     this.knots = lines.reduce(({ nodes, currentNode, lastStart, lastName, isFunction }, line, index) => {
-      if (line.match(/^\s*===(\s*function)?\s*(\w+)/)) {
-        const match = line.match(/^\s*===(\s*function)?\s*(\w+)/);
+      if (line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/)) {
+        const match = line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/);
         const newName = match[2];
         const foundFunction = !!match[1];
         const node = new KnotNode(lastName, lastStart, index, this, currentNode.join("\n"), isFunction);
@@ -255,6 +255,7 @@ var NodeMap = class _NodeMap {
       const dirname2 = path.dirname(filePath);
       return path.normalize(dirname2 + path.sep + filename);
     });
+    console.log("Knots found:", this.knots.map((k) => k.name));
   }
   static from(filePath) {
     return new Promise((resolve, reject) => {
@@ -272,11 +273,22 @@ var NodeMap = class _NodeMap {
 var nodeMaps = {};
 var mapsDone = false;
 function generateMaps() {
-  return import_vscode2.workspace.findFiles("**/*.ink").then((uris) => {
-    return Promise.all(uris.map(({ fsPath }) => NodeMap.from(fsPath))).catch((err) => console.log);
+  return Promise.all([
+    import_vscode2.workspace.findFiles("*.ink"),
+    // root directory
+    import_vscode2.workspace.findFiles("**/*.ink")
+    // subdirectories
+  ]).then(([rootFiles, subFiles]) => {
+    const allFiles = [...rootFiles, ...subFiles];
+    const uniqueFiles = Array.from(new Map(allFiles.map((f) => [f.fsPath, f])).values());
+    return Promise.all(uniqueFiles.map(({ fsPath }) => NodeMap.from(fsPath)));
   }).then((maps) => {
-    maps.forEach((map) => nodeMaps[map.filePath] = map);
+    maps.forEach((map) => {
+      nodeMaps[map.filePath] = map;
+    });
     mapsDone = true;
+  }).catch((err) => {
+    console.error("Error generating maps:", err);
   });
 }
 function getIncludeScope(filePath, knownScope = []) {
@@ -319,13 +331,25 @@ function getDivertsInScope(filePath, line) {
     } else {
       console.log("WARN: Couldn't find current stitch for line ", line);
     }
+    console.log("Diverts in scope for", filePath, line, "=>", targets.map((t) => t.name));
     return targets;
   }
   console.log(`Node map missing for file ${filePath}`);
   return [];
 }
 function getDefinitionByNameAndScope(name, filePath, line) {
-  const divert = getDivertsInScope(filePath, line).find((target) => target.name === name);
+  let divert = getDivertsInScope(filePath, line).find((target) => target.name === name);
+  if (!divert) {
+    for (const key in nodeMaps) {
+      const map = nodeMaps[key];
+      const targets = getDivertsInScope(map.filePath, line);
+      divert = targets.find((target) => target.name === name);
+      if (divert) break;
+    }
+  }
+  if (!divert) {
+    throw new Error(`No divert target named '${name}' found in scope at ${filePath}:${line}`);
+  }
   return new import_vscode2.Location(import_vscode2.Uri.file(divert.parentFile.filePath), new import_vscode2.Position(divert.line, 0));
 }
 function getDivertCompletionTargets(filePath, line) {
@@ -367,10 +391,13 @@ var InkDefinitionProvider = class {
     const after = new import_vscode4.Range(position, lineEnd);
     const beforeText = document.getText(before);
     const afterText = document.getText(after);
-    const beforeMatch = beforeText.match(/(->\s*\w*)$/)[1];
-    const afterMatch = afterText.match(/^([\w\.]*)\s*/)[1];
-    if (!(beforeMatch && afterMatch)) return;
-    const name = (beforeMatch + afterMatch).match(/->\s*([\w.]+)/)[1];
+    const beforeMatch = beforeText.match(/(->\s*\w*)$/);
+    const afterMatch = afterText.match(/^([\w\.]*)\s*/);
+    if (!beforeMatch || !afterMatch) return;
+    const combined = beforeMatch[1] + afterMatch[1];
+    const nameMatch = combined.match(/->\s*([\w.]+)/);
+    if (!nameMatch) return;
+    const name = nameMatch[1];
     const [target] = name.split(".");
     return getDefinitionByNameAndScope(target, document.uri.fsPath, position.line);
   }

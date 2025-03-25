@@ -21,7 +21,7 @@ class DivertTarget {
     };
     public get parentFile(): NodeMap {
         throw new Error("parentFile accessor must be implemented in subclass");
-    } 
+    }
     public toCompletionItem(): CompletionItem {
         return new CompletionItem(this.name, CompletionItemKind.Reference);
     }
@@ -99,7 +99,7 @@ class KnotNode extends DivertTarget {
         public readonly name: string | null,
         public readonly startLine: number,
         public readonly endLine: number,
-        public readonly _parentFile: NodeMap,
+        private readonly _parentFile: NodeMap,
         textContent: string,
         private readonly isFunction: boolean = false,
         private readonly lastLine: boolean = false
@@ -159,9 +159,9 @@ class NodeMap {
                     : { nodes: KnotNode[], currentNode: string[], lastStart: number, lastName: string | null, isFunction }
                 , line: string
                 , index: number) => {
-                if (line.match(/^\s*===(\s*function)?\s*(\w+)/)) {
                     // Found the start of a new knot.
-                    const match = line.match(/^\s*===(\s*function)?\s*(\w+)/);
+
+                    const match = line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/);
                     const newName = match[2];
                     const foundFunction = (!!match[1]);
                     const node = new KnotNode(lastName, lastStart, index, this, currentNode.join("\n"), isFunction);
@@ -185,6 +185,8 @@ class NodeMap {
                 const dirname = path.dirname(filePath);
                 return path.normalize(dirname + path.sep + filename);
             });
+
+        console.log("Knots found:", this.knots.map(k => k.name));
     }
 
     public static from(filePath: string): Promise<NodeMap> {
@@ -208,15 +210,29 @@ const nodeMaps: { [key: string]: NodeMap; } = {};
 let mapsDone: boolean = false;
 
 export function generateMaps(): Thenable<void> {
-    return workspace.findFiles("**/*.ink")
-        .then(uris => {
-            return Promise.all(uris.map(({ fsPath }) => NodeMap.from(fsPath))).catch(err => console.log);
-        })
-        .then((maps: NodeMap[]) => {
-            maps.forEach(map => nodeMaps[map.filePath] = map);
-            mapsDone = true;
+    return Promise.all([
+        workspace.findFiles("*.ink"),       // root directory
+        workspace.findFiles("**/*.ink")     // subdirectories
+    ])
+    .then(([rootFiles, subFiles]) => {
+        const allFiles = [...rootFiles, ...subFiles];
+
+        // deduplicate by fsPath
+        const uniqueFiles = Array.from(new Map(allFiles.map(f => [f.fsPath, f])).values());
+
+        return Promise.all(uniqueFiles.map(({ fsPath }) => NodeMap.from(fsPath)));
+    })
+    .then((maps: NodeMap[]) => {
+        maps.forEach(map => {
+            nodeMaps[map.filePath] = map;
         });
+        mapsDone = true;
+    })
+    .catch(err => {
+        console.error("Error generating maps:", err);
+    });
 }
+
 
 function getIncludeScope(filePath: string, knownScope: string[] = []): string[] {
     const fileMap = nodeMaps[filePath];
@@ -265,6 +281,7 @@ function getDivertsInScope(filePath: string, line: number): DivertTarget[] {
             console.log("WARN: Couldn't find current stitch for line ", line);
         }
 
+        console.log("Diverts in scope for", filePath, line, "=>", targets.map(t => t.name));
         return targets;
     }
     console.log(`Node map missing for file ${filePath}`);
@@ -272,13 +289,26 @@ function getDivertsInScope(filePath: string, line: number): DivertTarget[] {
 }
 
 export function getDefinitionByNameAndScope(name: string, filePath: string, line: number): Location {
-    const divert = getDivertsInScope(filePath, line)
-        .find(target => target.name === name);
+    let divert = getDivertsInScope(filePath, line)
+    .find(target => target.name === name);
+
+    if(!divert) {
+    for (const key in nodeMaps) {
+        const map = nodeMaps[key];
+        const targets = getDivertsInScope(map.filePath, line);
+        divert = targets.find(target => target.name === name);
+        if (divert) break;
+        }
+    }
+
+    if (!divert) {
+        throw new Error(`No divert target named '${name}' found in scope at ${filePath}:${line}`);
+    }
     return new Location(Uri.file(divert.parentFile.filePath), new Position(divert.line, 0));
 }
 
 /* Returns completion items for divert target names for a given line and file. */
-export function getDivertCompletionTargets(filePath: string, line: number): CompletionItem[] {
+export function getDivertCompletionTargets(filePath: string, line: number): CompletionItem[] { 
     return getDivertsInScope(filePath, line)
         .filter(target => target.name !== null)
         .map(target => target.toCompletionItem())
