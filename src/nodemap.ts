@@ -159,6 +159,7 @@ class NodeMap {
                     : { nodes: KnotNode[], currentNode: string[], lastStart: number, lastName: string | null, isFunction }
                 , line: string
                 , index: number) => {
+                if (line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/)) {
                     // Found the start of a new knot.
 
                     const match = line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/);
