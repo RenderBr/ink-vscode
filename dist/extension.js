@@ -33,7 +33,7 @@ __export(extension_exports, {
   activate: () => activate
 });
 module.exports = __toCommonJS(extension_exports);
-var import_vscode5 = require("vscode");
+var import_vscode4 = require("vscode");
 
 // src/wordcount.ts
 var import_vscode = require("vscode");
@@ -382,22 +382,15 @@ var DivertCompletionProvider = class {
 };
 
 // src/definitions.ts
-var import_vscode4 = require("vscode");
-var InkDefinitionProvider = class {
+var InkDivertDefinitionProvider = class {
   provideDefinition(document, position) {
-    const lineStart = new import_vscode4.Position(position.line, 0);
-    const lineEnd = new import_vscode4.Position(position.line + 1, 0);
-    const before = new import_vscode4.Range(lineStart, position);
-    const after = new import_vscode4.Range(position, lineEnd);
-    const beforeText = document.getText(before);
-    const afterText = document.getText(after);
-    const beforeMatch = beforeText.match(/(->\s*\w*)$/);
-    const afterMatch = afterText.match(/^([\w\.]*)\s*/);
-    if (!beforeMatch || !afterMatch) return;
-    const combined = beforeMatch[1] + afterMatch[1];
-    const nameMatch = combined.match(/->\s*([\w.]+)/);
-    if (!nameMatch) return;
-    const name = nameMatch[1];
+    const line = document.lineAt(position.line).text;
+    const cursorIndex = position.character;
+    const before = line.slice(0, cursorIndex);
+    const after = line.slice(cursorIndex);
+    const match = (before + after).match(/->\s*([\w.]+)/);
+    if (!match) return;
+    const name = match[1];
     const [target] = name.split(".");
     return getDefinitionByNameAndScope(target, document.uri.fsPath, position.line);
   }
@@ -409,12 +402,12 @@ function activate(ctx) {
   const wordCounter = new WordAndNodeCounter();
   const wcController = new WordNodeCounterController(wordCounter);
   const nodeMapController = new NodeController();
-  import_vscode5.window.withProgress({ location: import_vscode5.ProgressLocation.Window, title: "Mapping knots and stitches..." }, generateMaps);
+  import_vscode4.window.withProgress({ location: import_vscode4.ProgressLocation.Window, title: "Mapping knots and stitches..." }, generateMaps);
   ctx.subscriptions.push(wcController);
   ctx.subscriptions.push(wordCounter);
   ctx.subscriptions.push(nodeMapController);
-  ctx.subscriptions.push(import_vscode5.languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), ">", "-", " "));
-  ctx.subscriptions.push(import_vscode5.languages.registerDefinitionProvider(INK, new InkDefinitionProvider()));
+  ctx.subscriptions.push(import_vscode4.languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), ">", "-", " "));
+  ctx.subscriptions.push(import_vscode4.languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()));
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {

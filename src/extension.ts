@@ -5,7 +5,7 @@ import { ExtensionContext, DocumentFilter, ProgressLocation, languages, window }
 import { WordAndNodeCounter, WordNodeCounterController } from "./wordcount";
 import { DivertCompletionProvider } from "./completion";
 import * as NodeMap from "./nodemap";
-import { InkDefinitionProvider } from "./definitions";
+import { InkDivertDefinitionProvider } from "./definitions";
 
 const INK : DocumentFilter = { language: 'ink' };
 
@@ -29,5 +29,5 @@ export function activate(ctx: ExtensionContext) {
     ctx.subscriptions.push(languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), '>', '-', ' '));
 
     // Enable the definition provider.
-    ctx.subscriptions.push(languages.registerDefinitionProvider(INK, new InkDefinitionProvider()));
+    ctx.subscriptions.push(languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()));
 }
