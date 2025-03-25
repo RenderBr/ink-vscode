@@ -14,15 +14,13 @@
     "license": "MIT",
     "publisher": "bruno-dias",
     "engines": {
-        "vscode": "^1.16.0"
+        "vscode": "^1.98.0"
     },
     "categories": [
-        "Languages"
+        "Programming Languages"
     ],
-    "activationEvents": [
-        "onLanguage:ink"
-    ],
-    "main": "./out/src/extension",
+    "activationEvents": [],
+    "main": "./dist/extension.js",
     "keywords": [
         "ink",
         "inkle",
@@ -57,14 +55,16 @@
         ]
     },
     "scripts": {
-        "vscode:prepublish": "npm run compile",
-        "compile": "tsc -p ./",
-        "watch": "tsc -watch -p ./",
-        "postinstall": "node ./node_modules/vscode/bin/install"
+        "vscode:prepublish": "tsup",
+        "compile": "tsup",
+        "watch": "tsup --watch"
     },
     "devDependencies": {
-        "@types/node": "^8.0.34",
-        "typescript": "^2.5.3",
-        "vscode": "^1.1.6"
+        "@types/node": "^22.13.13",
+        "tsup": "^8.4.0",
+        "typescript": "^5.8.2"
+    },
+    "dependencies": {
+        "@types/vscode": "^1.98.0"
     }
 }

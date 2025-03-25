@@ -19,7 +19,7 @@ Gathers and choices can have labels:
     * (labeled) choice.
 - (gather) with a label.
 Some inline logic:
-~ foo = 1
+~ num = 1
 ~ runFunc()
 {
     stamina > x:
