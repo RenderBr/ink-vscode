@@ -7,7 +7,6 @@ import { generateMaps, NodeController } from "./models/NodeController";
 import { InkFunctionDefinitionProvider } from "./InkFunctionDefinitionProvider";
 import { WordAndNodeCounter, WordNodeCounterController } from "./WordCount";
 import { DivertCompletionProvider } from "./Completion";
-import { FunctionMap } from "./models/FunctionMap";
 import { FunctionController, generateFunctionMaps } from "./models/FunctionController";
 import { InkVariableDefinitionProvider } from "./InkVariableDefinitionProvider";
 
@@ -35,7 +34,7 @@ export function activate(ctx: ExtensionContext) {
     // Enable the completion provider.
     ctx.subscriptions.push(languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), '>', '-', ' '));
 
-    // Enable the definition provider.
+    // Enable the definition providers.
     ctx.subscriptions.push(languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()));
     ctx.subscriptions.push(languages.registerDefinitionProvider(INK, new InkFunctionDefinitionProvider()));
     ctx.subscriptions.push(languages.registerDefinitionProvider(INK, new InkVariableDefinitionProvider()));

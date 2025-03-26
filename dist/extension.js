@@ -27,12 +27,12 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/Extension.ts
-var Extension_exports = {};
-__export(Extension_exports, {
+// src/extension.ts
+var extension_exports = {};
+__export(extension_exports, {
   activate: () => activate
 });
-module.exports = __toCommonJS(Extension_exports);
+module.exports = __toCommonJS(extension_exports);
 var import_vscode9 = require("vscode");
 
 // src/models/NodeController.ts
@@ -615,7 +615,7 @@ var InkVariableDefinitionProvider = class {
   }
 };
 
-// src/Extension.ts
+// src/extension.ts
 var INK = { language: "ink" };
 function activate(ctx) {
   const wordCounter = new WordAndNodeCounter();
@@ -637,4 +637,4 @@ function activate(ctx) {
 0 && (module.exports = {
   activate
 });
-//# sourceMappingURL=Extension.js.map
+//# sourceMappingURL=extension.js.map
