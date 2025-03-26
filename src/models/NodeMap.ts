@@ -1,68 +1,83 @@
 import path from "path";
 import fs from "fs";
 import { KnotNode } from "./KnotNode";
-import { ProgressLocation, TextDocument } from "vscode";
+import { TextDocument } from "vscode";
 
 export class NodeMap {
-    static generateMaps(arg0: { location: ProgressLocation.Window; title: string; }, generateMaps: any) {
-        throw new Error("Method not implemented.");
-    }
-
     public readonly knots: KnotNode[];
     public readonly includes: string[];
 
-    private constructor(public filePath: string, fileText: string) {
+    private constructor(public readonly filePath: string, fileText: string) {
         const lines = fileText.split("\n");
-        this.knots = lines
-            .reduce((
-                { nodes, currentNode, lastStart, lastName, isFunction }
-                    : { nodes: KnotNode[], currentNode: string[], lastStart: number, lastName: string | null, isFunction }
-                , line: string
-                , index: number) => {
-                if (line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/)) {
-                    // Found the start of a new knot.
 
-                    const match = line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/);
-                    const newName = match[2];
-                    const foundFunction = (!!match[1]);
-                    const node = new KnotNode(lastName, lastStart, index, this, currentNode.join("\n"), isFunction);
-                    nodes.push(node);
-                    return { nodes, currentNode: [line], lastStart: index, lastName: newName, isFunction: foundFunction };
-                }
-                if (index === lines.length - 1) {
-                    // Found the last line
-                    const node = new KnotNode(lastName, lastStart, index + 1, this, currentNode.concat(line).join("\n"), false, true);
-                    nodes.push(node);
-                    return { nodes, currentNode: [line], lastStart: index, lastName: null, isFunction };
-                }
-                currentNode.push(line);
-                return { nodes, currentNode, lastStart, lastName, isFunction };
-            }, { nodes: [], currentNode: [], lastStart: 0, lastName: null, isFunction: false })
-            .nodes;
-        this.includes = lines
-            .filter(line => line.match(/^\s*INCLUDE\s+(\w+\.ink)/))
-            .map(line => {
-                const filename = line.match(/^\s*INCLUDE\s+(\w+\.ink)/)[1];
-                const dirname = path.dirname(filePath);
-                return path.normalize(dirname + path.sep + filename);
-            });
+        this.knots = this._parseKnots(lines);
+        this.includes = this._parseIncludes(lines);
 
         console.log("Knots found:", this.knots.map(k => k.name));
     }
 
-    public static from(filePath: string): Promise<NodeMap> {
-        return new Promise<string>((resolve, reject) => {
-            fs.readFile(filePath, 'utf8', (err, data: string) => {
-                if (err) return reject(err);
-                return resolve(data);
-            });
-        })
-            .catch((err) => console.log("Error opening file: ", err))
-            .then((data) => new NodeMap(filePath, data ? data : ""));
+    private _parseKnots(lines: string[]): KnotNode[] {
+        const knots: KnotNode[] = [];
+
+        const headerRegex = /^\s*===(\s*function)?\s*(\w+)\s*===/;
+
+        let currentLines: string[] = [];
+        let lastStart = 0;
+        let lastName: string | null = null;
+        let isFunction = false;
+
+        // Pushes the current knot to the list of knots
+        const pushKnot = (end: number, isFinal = false) => {
+            if (lastName !== null) {
+                const content = currentLines.join("\n");
+                knots.push(new KnotNode(lastName, lastStart, end, this, content, isFunction, isFinal));
+            }
+        };
+
+        // Iterate over each line in the file, parsing knot headers
+        lines.forEach((line, index) => {
+            const match = headerRegex.exec(line);
+
+            if (match) {
+                pushKnot(index);
+                lastName = match[2];
+                isFunction = !!match[1];
+                lastStart = index;
+                currentLines = [line];
+            } else {
+                currentLines.push(line);
+                if (index === lines.length - 1) {
+                    pushKnot(index + 1, true);
+                }
+            }
+        });
+
+        return knots;
     }
 
-    public static fromDocument(document: TextDocument): NodeMap {
-        const { fsPath } = document.uri;
-        return new NodeMap(fsPath, document.getText());
+    private _parseIncludes(lines: string[]): string[] {
+        const includeRegex = /^\s*INCLUDE\s+(\w+\.ink)/;
+
+        return lines
+            .map(line => includeRegex.exec(line))
+            .filter(Boolean)
+            .map(match => {
+                const filename = match![1];
+                return path.resolve(path.dirname(this.filePath), filename);
+            });
+    }
+
+    public static async loadFromFilePath(filePath: string): Promise<NodeMap> {
+        try {
+            const data = await fs.promises.readFile(filePath, "utf8");
+            return new NodeMap(filePath, data);
+        } catch (err) {
+            console.error("Error opening file:", err);
+            return new NodeMap(filePath, "");
+        }
+    }
+
+    public static nodeMapFromDocument(document: TextDocument): NodeMap {
+        return new NodeMap(document.uri.fsPath, document.getText());
     }
 }

@@ -2,40 +2,49 @@
 /* Ink for VS Code Extension Main File */
 
 import { ExtensionContext, DocumentFilter, ProgressLocation, languages, window } from "vscode";
-import { InkDivertDefinitionProvider } from "./InkDivertDefinitionProvider";
-import { generateMaps, NodeController } from "./models/NodeController";
-import { InkFunctionDefinitionProvider } from "./InkFunctionDefinitionProvider";
-import { WordAndNodeCounter, WordNodeCounterController } from "./WordCount";
-import { DivertCompletionProvider } from "./Completion";
-import { FunctionController, generateFunctionMaps } from "./models/FunctionController";
-import { InkVariableDefinitionProvider } from "./InkVariableDefinitionProvider";
+import { InkDivertDefinitionProvider } from "./providers/InkDivertDefinitionProvider";
+import { InkFunctionDefinitionProvider } from "./providers/InkFunctionDefinitionProvider";
+import { DivertCompletionProvider } from "./providers/DivertCompletionProvider";
+import { InkVariableDefinitionProvider } from "./providers/InkVariableDefinitionProvider";
+import { generateNodeMaps, NodeController } from "./controllers/NodeController";
+import { FunctionController, generateFunctionMaps } from "./controllers/FunctionController";
+import { WordNodeCounterController } from "./controllers/WordCountController";
+import { WordCounterService } from "./controllers/WordCounterService";
 
 const INK : DocumentFilter = { language: 'ink' };
 
-export function activate(ctx: ExtensionContext) {
+export function activate(context: ExtensionContext) {
+    const disposables = [];
 
-    // Create a new word counter.s
-    const wordCounter = new WordAndNodeCounter();
-    const wcController = new WordNodeCounterController(wordCounter);
-    const nodeMapController = new NodeController();
-    const functionMapper = new FunctionController();
+    // Services and controllers.
+    const wordCounter = new WordCounterService();
+    const wordCounterController = new WordNodeCounterController(wordCounter);
+    const nodeController = new NodeController();
+    const functionController = new FunctionController();
 
-    // Start generating a node map.
-    window.withProgress({ location: ProgressLocation.Window, title: "Mapping knots and stitches..." }, generateMaps);
-    window.withProgress({location: ProgressLocation.Window, title: "Mapping function declarations..." }, generateFunctionMaps);
+    // Add to a list of disposables to be disposed when this extension is deactivated.
+    disposables.push(wordCounter, wordCounterController, nodeController, functionController);
+
+    // Show mapping progress, runs in parallel.
+    (async () => {
+        try {
+          await Promise.all([
+            window.withProgress({ location: ProgressLocation.Window, title: "Mapping knots and stitches..." }, generateNodeMaps),
+            window.withProgress({ location: ProgressLocation.Window, title: "Mapping function declarations..." }, generateFunctionMaps)
+          ]);
+        } catch (err) {
+          console.error("Error while mapping:", err);
+        }
+    })();
     
-    // Add to a list of disposables which are disposed when this extension is
-    // deactivated again.
-    ctx.subscriptions.push(wcController);
-    ctx.subscriptions.push(wordCounter);
-    ctx.subscriptions.push(nodeMapController);
-    ctx.subscriptions.push(functionMapper);
+    // Register language features and push to disposables.
+    disposables.push(
+        languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), '>', '-', ' '),
+        languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()),
+        languages.registerDefinitionProvider(INK, new InkFunctionDefinitionProvider()),
+        languages.registerDefinitionProvider(INK, new InkVariableDefinitionProvider())
+    );
 
-    // Enable the completion provider.
-    ctx.subscriptions.push(languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), '>', '-', ' '));
-
-    // Enable the definition providers.
-    ctx.subscriptions.push(languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()));
-    ctx.subscriptions.push(languages.registerDefinitionProvider(INK, new InkFunctionDefinitionProvider()));
-    ctx.subscriptions.push(languages.registerDefinitionProvider(INK, new InkVariableDefinitionProvider()));
+    // Register everything for disposal.
+    context.subscriptions.push(...disposables);
 }

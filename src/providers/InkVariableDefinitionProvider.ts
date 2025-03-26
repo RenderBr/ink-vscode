@@ -1,18 +1,9 @@
-import {
-    DefinitionProvider,
-    Location,
-    Position,
-    ProviderResult,
-    TextDocument,
-    Uri
-} from "vscode";
-import { getVariableDefinitionByName } from "./models/FunctionController";
+import { DefinitionProvider, Location, Position, ProviderResult, TextDocument, Uri} from "vscode";
+import { getVariableDefinitionByName } from "../controllers/FunctionController";
 
 export class InkVariableDefinitionProvider implements DefinitionProvider {
-    public provideDefinition(
-        document: TextDocument,
-        position: Position
-    ): ProviderResult<Location> {
+    public provideDefinition(document: TextDocument, position: Position): ProviderResult<Location>
+    {
         const wordRange = document.getWordRangeAtPosition(position);
         if (!wordRange) return;
 

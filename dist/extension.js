@@ -33,32 +33,78 @@ __export(extension_exports, {
   activate: () => activate
 });
 module.exports = __toCommonJS(extension_exports);
-var import_vscode9 = require("vscode");
+var import_vscode10 = require("vscode");
 
-// src/models/NodeController.ts
-var import_vscode3 = require("vscode");
+// src/controllers/NodeController.ts
+var import_vscode4 = require("vscode");
+
+// src/controllers/AbstractMapController.ts
+var import_vscode = require("vscode");
+var AbstractMapController = class {
+  constructor(mapStore, matchTrigger, mapFromDocument) {
+    this.mapStore = mapStore;
+    this.matchTrigger = matchTrigger;
+    this.mapFromDocument = mapFromDocument;
+    const subscriptions = [
+      import_vscode.workspace.onDidChangeTextDocument(this._handleTextChange, this)
+    ];
+    this._disposable = import_vscode.Disposable.from(...subscriptions);
+  }
+  _handleTextChange({ contentChanges, document }) {
+    if (!contentChanges.some((change) => this.matchTrigger.test(change.text))) return;
+    const { fsPath } = document.uri;
+    this.mapStore[fsPath] = this.mapFromDocument(document);
+  }
+  dispose() {
+    this._disposable.dispose();
+  }
+};
+async function generateMapsFromFiles(loader) {
+  const allFiles = await import_vscode.workspace.findFiles("**/*.ink");
+  const uniqueFiles = Array.from(new Map(allFiles.map((f) => [f.fsPath, f])).values());
+  const maps = await Promise.all(uniqueFiles.map((file) => loader(file.fsPath)));
+  const result = {};
+  for (const map of maps) {
+    const key = map.filePath;
+    result[key] = map;
+  }
+  return result;
+}
+function findDefinition(name, filePath, maps, extractor) {
+  const local = maps[filePath];
+  if (local) {
+    const found = extractor(local).find((def) => def.name === name);
+    if (found) return found;
+  }
+  for (const key in maps) {
+    if (key === filePath) continue;
+    const found = extractor(maps[key]).find((def) => def.name === name);
+    if (found) return found;
+  }
+  return null;
+}
 
 // src/models/NodeMap.ts
 var import_path = __toESM(require("path"));
 var import_fs = __toESM(require("fs"));
 
 // src/models/KnotNode.ts
-var import_vscode2 = require("vscode");
+var import_vscode3 = require("vscode");
 
 // src/models/DivertTarget.ts
-var import_vscode = require("vscode");
+var import_vscode2 = require("vscode");
 var DivertTarget = class {
   constructor(name) {
     this.name = name;
   }
   get line() {
-    throw new Error("line accessor must be overridden in subclass");
+    throw new Error("Subclasses must implement 'line' getter");
   }
   get parentFile() {
-    throw new Error("parentFile accessor must be implemented in subclass");
+    throw new Error("Subclasses must implement 'parentFile' getter");
   }
   toCompletionItem() {
-    return new import_vscode.CompletionItem(this.name, import_vscode.CompletionItemKind.Reference);
+    return new import_vscode2.CompletionItem(this.name ?? "", import_vscode2.CompletionItemKind.Reference);
   }
 };
 
@@ -87,7 +133,7 @@ var StitchNode = class extends DivertTarget {
     this._relativeEnd = _relativeEnd;
     this.parentKnot = parentKnot;
     this.lastLine = lastLine;
-    this.labels = textContent.split("\n").map((line, index) => ({ found: line.match(/^\s*[-\*\+]\s*\((\w+)\)/), index })).filter(({ found }) => found !== null).map(({ found, index }) => new LabelNode(found[1], index, this));
+    this.labels = this._extractLabels(textContent);
   }
   get line() {
     return this.startLine;
@@ -95,11 +141,23 @@ var StitchNode = class extends DivertTarget {
   get startLine() {
     return this.parentKnot.startLine + this._relativeStart;
   }
+  get endLine() {
+    return this.parentKnot.startLine + this._relativeEnd + (this.lastLine ? 1 : 0);
+  }
   get parentFile() {
     return this.parentKnot.parentFile;
   }
-  get endLine() {
-    return this.parentKnot.startLine + this._relativeEnd + (this.lastLine ? 1 : 0);
+  _extractLabels(text) {
+    const labelRegex = /^\s*[-*+]\s*\((\w+)\)/;
+    const lines = text.split("\n");
+    const labels = [];
+    for (let i = 0; i < lines.length; i++) {
+      const match = labelRegex.exec(lines[i]);
+      if (match) {
+        labels.push(new LabelNode(match[1], i, this));
+      }
+    }
+    return labels;
   }
 };
 
@@ -113,26 +171,7 @@ var KnotNode = class extends DivertTarget {
     this._parentFile = _parentFile;
     this.isFunction = isFunction;
     this.lastLine = lastLine;
-    const lines = textContent.split("\n");
-    this.stitches = lines.reduce(({ nodes, currentNode, lastStart, lastName }, line, index) => {
-      if (line.match(/^\s*={1}\s*(\w+)/)) {
-        const newName = line.match(/^\s*={1}\s*(\w+)/)[1];
-        const node = new StitchNode(lastName, lastStart, index, this, currentNode.join("\n"));
-        nodes.push(node);
-        if (index === lines.length - 1) {
-          const node2 = new StitchNode(newName, index, index + 1, this, currentNode.join("\n"), this.lastLine);
-          nodes.push(node2);
-        }
-        return { nodes, currentNode: [line], lastStart: index, lastName: newName };
-      }
-      if (index === lines.length - 1) {
-        const node = new StitchNode(lastName, lastStart, index + 1, this, currentNode.join("\n"), this.lastLine);
-        nodes.push(node);
-        return { nodes, currentNode: [line], lastStart: index, lastName: null };
-      }
-      currentNode.push(line);
-      return { nodes, currentNode, lastStart, lastName };
-    }, { nodes: [], currentNode: [], lastStart: 0, lastName: null }).nodes;
+    this.stitches = this._parseStitches(textContent);
   }
   get line() {
     return this.startLine;
@@ -141,8 +180,40 @@ var KnotNode = class extends DivertTarget {
     return this._parentFile;
   }
   toCompletionItem() {
-    const itemKind = this.isFunction ? import_vscode2.CompletionItemKind.Function : import_vscode2.CompletionItemKind.Reference;
-    return new import_vscode2.CompletionItem(this.name, itemKind);
+    const itemKind = this.isFunction ? import_vscode3.CompletionItemKind.Function : import_vscode3.CompletionItemKind.Reference;
+    return new import_vscode3.CompletionItem(this.name ?? "", itemKind);
+  }
+  _parseStitches(content) {
+    const lines = content.split("\n");
+    const stitches = [];
+    const stitchRegex = /^\s*=\s*(\w+)/;
+    let currentName = null;
+    let currentStart = 0;
+    let currentLines = [];
+    const pushStitch = (end, isFinal = false) => {
+      if (!currentName) return;
+      const text = currentLines.join("\n");
+      stitches.push(new StitchNode(currentName, currentStart, end, this, text, isFinal));
+    };
+    for (let i = 0; i < lines.length; i++) {
+      const line = lines[i];
+      const match = stitchRegex.exec(line);
+      if (match) {
+        if (currentLines.length > 0) {
+          pushStitch(i);
+        }
+        currentName = match[1];
+        currentStart = i;
+        currentLines = [line];
+      } else {
+        currentLines.push(line);
+      }
+      const isLastLine = i === lines.length - 1;
+      if (isLastLine && currentName) {
+        pushStitch(i + 1, this.lastLine);
+      }
+    }
+    return stitches;
   }
 };
 
@@ -151,174 +222,156 @@ var NodeMap = class _NodeMap {
   constructor(filePath, fileText) {
     this.filePath = filePath;
     const lines = fileText.split("\n");
-    this.knots = lines.reduce(({ nodes, currentNode, lastStart, lastName, isFunction }, line, index) => {
-      if (line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/)) {
-        const match = line.match(/^\s*===(\s*function)?\s*(\w+)\s*===/);
-        const newName = match[2];
-        const foundFunction = !!match[1];
-        const node = new KnotNode(lastName, lastStart, index, this, currentNode.join("\n"), isFunction);
-        nodes.push(node);
-        return { nodes, currentNode: [line], lastStart: index, lastName: newName, isFunction: foundFunction };
-      }
-      if (index === lines.length - 1) {
-        const node = new KnotNode(lastName, lastStart, index + 1, this, currentNode.concat(line).join("\n"), false, true);
-        nodes.push(node);
-        return { nodes, currentNode: [line], lastStart: index, lastName: null, isFunction };
-      }
-      currentNode.push(line);
-      return { nodes, currentNode, lastStart, lastName, isFunction };
-    }, { nodes: [], currentNode: [], lastStart: 0, lastName: null, isFunction: false }).nodes;
-    this.includes = lines.filter((line) => line.match(/^\s*INCLUDE\s+(\w+\.ink)/)).map((line) => {
-      const filename = line.match(/^\s*INCLUDE\s+(\w+\.ink)/)[1];
-      const dirname = import_path.default.dirname(filePath);
-      return import_path.default.normalize(dirname + import_path.default.sep + filename);
-    });
+    this.knots = this._parseKnots(lines);
+    this.includes = this._parseIncludes(lines);
     console.log("Knots found:", this.knots.map((k) => k.name));
   }
-  static generateMaps(arg0, generateMaps2) {
-    throw new Error("Method not implemented.");
+  _parseKnots(lines) {
+    const knots = [];
+    const headerRegex = /^\s*===(\s*function)?\s*(\w+)\s*===/;
+    let currentLines = [];
+    let lastStart = 0;
+    let lastName = null;
+    let isFunction = false;
+    const pushKnot = (end, isFinal = false) => {
+      if (lastName !== null) {
+        const content = currentLines.join("\n");
+        knots.push(new KnotNode(lastName, lastStart, end, this, content, isFunction, isFinal));
+      }
+    };
+    lines.forEach((line, index) => {
+      const match = headerRegex.exec(line);
+      if (match) {
+        pushKnot(index);
+        lastName = match[2];
+        isFunction = !!match[1];
+        lastStart = index;
+        currentLines = [line];
+      } else {
+        currentLines.push(line);
+        if (index === lines.length - 1) {
+          pushKnot(index + 1, true);
+        }
+      }
+    });
+    return knots;
   }
-  static from(filePath) {
-    return new Promise((resolve, reject) => {
-      import_fs.default.readFile(filePath, "utf8", (err, data) => {
-        if (err) return reject(err);
-        return resolve(data);
-      });
-    }).catch((err) => console.log("Error opening file: ", err)).then((data) => new _NodeMap(filePath, data ? data : ""));
+  _parseIncludes(lines) {
+    const includeRegex = /^\s*INCLUDE\s+(\w+\.ink)/;
+    return lines.map((line) => includeRegex.exec(line)).filter(Boolean).map((match) => {
+      const filename = match[1];
+      return import_path.default.resolve(import_path.default.dirname(this.filePath), filename);
+    });
   }
-  static fromDocument(document) {
-    const { fsPath } = document.uri;
-    return new _NodeMap(fsPath, document.getText());
+  static async loadFromFilePath(filePath) {
+    try {
+      const data = await import_fs.default.promises.readFile(filePath, "utf8");
+      return new _NodeMap(filePath, data);
+    } catch (err) {
+      console.error("Error opening file:", err);
+      return new _NodeMap(filePath, "");
+    }
+  }
+  static nodeMapFromDocument(document) {
+    return new _NodeMap(document.uri.fsPath, document.getText());
   }
 };
 
-// src/models/NodeController.ts
+// src/controllers/NodeController.ts
 var nodeMaps = {};
-var mapsDone = false;
 var PERMANENT_DIVERTS = [
-  new import_vscode3.CompletionItem("END", import_vscode3.CompletionItemKind.Keyword),
-  new import_vscode3.CompletionItem("DONE", import_vscode3.CompletionItemKind.Keyword),
-  new import_vscode3.CompletionItem("->", import_vscode3.CompletionItemKind.Keyword)
+  new import_vscode4.CompletionItem("END", import_vscode4.CompletionItemKind.Keyword),
+  new import_vscode4.CompletionItem("DONE", import_vscode4.CompletionItemKind.Keyword),
+  new import_vscode4.CompletionItem("->", import_vscode4.CompletionItemKind.Keyword)
 ];
-function getDivertCompletionTargets(filePath, line) {
-  return getDivertsInScope(filePath, line).filter((target) => target.name !== null).map((target) => target.toCompletionItem()).concat(PERMANENT_DIVERTS);
-}
-var NodeController = class {
+var NodeController = class extends AbstractMapController {
   constructor() {
-    let subscriptions = [];
-    import_vscode3.workspace.onDidChangeTextDocument(this._onEvent, this, subscriptions);
-    this._disposable = import_vscode3.Disposable.from(...subscriptions);
-  }
-  _onEvent({ contentChanges, document }) {
-    if (!contentChanges.find((change) => change.text.match(/[\n\*\+\(\)-=]/) !== null)) return;
-    const { fsPath } = document.uri;
-    nodeMaps[fsPath] = NodeMap.fromDocument(document);
-  }
-  dispose() {
-    this._disposable.dispose();
+    super(
+      nodeMaps,
+      /[\n*+\(\)\-=\[]/,
+      // Trigger characters
+      NodeMap.nodeMapFromDocument
+    );
   }
 };
-function generateMaps() {
-  return Promise.all([
-    import_vscode3.workspace.findFiles("*.ink"),
-    // root directory
-    import_vscode3.workspace.findFiles("**/*.ink")
-    // subdirectories
-  ]).then(([rootFiles, subFiles]) => {
-    const allFiles = [...rootFiles, ...subFiles];
+async function generateNodeMaps() {
+  try {
+    const allFiles = await import_vscode4.workspace.findFiles("**/*.ink");
     const uniqueFiles = Array.from(new Map(allFiles.map((f) => [f.fsPath, f])).values());
-    return Promise.all(uniqueFiles.map(({ fsPath }) => NodeMap.from(fsPath)));
-  }).then((maps) => {
+    const maps = await Promise.all(uniqueFiles.map((f) => NodeMap.loadFromFilePath(f.fsPath)));
     maps.forEach((map) => {
       nodeMaps[map.filePath] = map;
     });
-    mapsDone = true;
-  }).catch((err) => {
-    console.error("Error generating maps:", err);
-  });
+  } catch (err) {
+    console.error("Error generating node maps:", err);
+  }
 }
-function getIncludeScope(filePath, knownScope = []) {
-  const fileMap = nodeMaps[filePath];
-  if (!fileMap) return knownScope;
-  if (knownScope.indexOf(filePath) === -1) knownScope.push(filePath);
-  const newScope = fileMap.includes.filter((include) => knownScope.indexOf(include) === -1);
-  if (newScope.length < 1) return knownScope;
-  return getIncludeScope(filePath, getIncludeScope(newScope[0], knownScope));
+function getDivertCompletionTargets(filePath, line) {
+  return [
+    ...getDivertsInScope(filePath, line).filter((target) => target.name).map((target) => target.toCompletionItem()),
+    ...PERMANENT_DIVERTS
+  ];
 }
 function stitchFor(filePath, line) {
-  const nodemap = nodeMaps[filePath];
-  if (!nodemap) return null;
-  const knot = nodemap.knots.find((knot2) => knot2.startLine <= line && knot2.endLine > line);
-  if (!knot) {
-    console.log("Can't identify knot for line ", line);
-    return null;
+  const map = nodeMaps[filePath];
+  if (!map) return null;
+  const knot = map.knots.find((k) => k.startLine <= line && k.endLine > line);
+  if (!knot) return null;
+  return knot.stitches.find((s) => s.startLine <= line && s.endLine > line) ?? null;
+}
+function getIncludeScope(filePath, visited = /* @__PURE__ */ new Set()) {
+  if (visited.has(filePath)) return Array.from(visited);
+  visited.add(filePath);
+  const map = nodeMaps[filePath];
+  if (!map) return Array.from(visited);
+  for (const include of map.includes) {
+    getIncludeScope(include, visited);
   }
-  const stitch = knot.stitches.find((stitch2) => stitch2.startLine <= line && stitch2.endLine > line);
-  if (!stitch) {
-    console.log("Can't identify stitch for line ", line);
-    return null;
-  }
-  return stitch;
+  return Array.from(visited);
 }
 function getDivertsInScope(filePath, line) {
-  if (nodeMaps[filePath]) {
-    let targets = [];
-    const scope = getIncludeScope(filePath);
-    const knots = scope.map(
-      (path2) => nodeMaps[path2].knots
-    ).reduce((a, b) => a.concat(b));
-    targets = targets.concat(knots);
-    const currentStitch = stitchFor(filePath, line);
-    if (currentStitch) {
-      const stitches = currentStitch.parentKnot.stitches;
-      const labels = currentStitch.labels;
-      targets = targets.concat(stitches);
-      targets = targets.concat(labels);
-    } else {
-      console.log("WARN: Couldn't find current stitch for line ", line);
-    }
-    console.log("Diverts in scope for", filePath, line, "=>", targets.map((t) => t.name));
-    return targets;
+  const map = nodeMaps[filePath];
+  if (!map) return [];
+  const scopeFiles = getIncludeScope(filePath);
+  const targets = scopeFiles.flatMap((path2) => nodeMaps[path2]?.knots ?? []);
+  const stitch = stitchFor(filePath, line);
+  if (stitch) {
+    targets.push(...stitch.parentKnot.stitches);
+    targets.push(...stitch.labels);
   }
-  console.log(`Node map missing for file ${filePath}`);
-  return [];
+  return targets;
 }
 function getDefinitionByNameAndScope(name, filePath, line) {
-  let divert = getDivertsInScope(filePath, line).find((target) => target.name === name);
-  if (!divert) {
+  let target = getDivertsInScope(filePath, line).find((t) => t.name === name);
+  if (!target) {
     for (const key in nodeMaps) {
-      const map = nodeMaps[key];
-      const targets = getDivertsInScope(map.filePath, line);
-      divert = targets.find((target) => target.name === name);
-      if (divert) break;
+      target = getDivertsInScope(key, line).find((t) => t.name === name);
+      if (target) break;
     }
   }
-  if (!divert) {
+  if (!target) {
     throw new Error(`No divert target named '${name}' found in scope at ${filePath}:${line}`);
   }
-  return new import_vscode3.Location(import_vscode3.Uri.file(divert.parentFile.filePath), new import_vscode3.Position(divert.line, 0));
+  return new import_vscode4.Location(import_vscode4.Uri.file(target.parentFile.filePath), new import_vscode4.Position(target.line, 0));
 }
 
-// src/InkDivertDefinitionProvider.ts
-var InkDivertDefinitionProvider = class {
+// src/providers/InkDivertDefinitionProvider.ts
+var InkDivertDefinitionProvider = class _InkDivertDefinitionProvider {
+  static {
+    this.divertRegex = /->\s*([\w.]+)/;
+  }
   provideDefinition(document, position) {
-    const line = document.lineAt(position.line).text;
-    const cursorIndex = position.character;
-    const before = line.slice(0, cursorIndex);
-    const after = line.slice(cursorIndex);
-    const match = (before + after).match(/->\s*([\w.]+)/);
+    const lineText = document.lineAt(position.line).text;
+    const cursorPos = position.character;
+    const match = _InkDivertDefinitionProvider.divertRegex.exec(lineText.slice(0, cursorPos) + lineText.slice(cursorPos));
     if (!match) return;
-    const name = match[1];
-    const [target] = name.split(".");
+    const [target] = match[1].split(".");
     return getDefinitionByNameAndScope(target, document.uri.fsPath, position.line);
   }
 };
 
-// src/InkFunctionDefinitionProvider.ts
+// src/providers/InkFunctionDefinitionProvider.ts
 var import_vscode5 = require("vscode");
-
-// src/models/FunctionController.ts
-var import_vscode4 = require("vscode");
 
 // src/models/FunctionMap.ts
 var fs2 = __toESM(require("fs"));
@@ -423,75 +476,32 @@ var FunctionMap = class _FunctionMap {
   }
 };
 
-// src/models/FunctionController.ts
+// src/controllers/FunctionController.ts
 var functionMaps = {};
-var functionMapsDone = false;
-var FunctionController = class {
+var FunctionController = class extends AbstractMapController {
   constructor() {
-    let subscriptions = [];
-    import_vscode4.workspace.onDidChangeTextDocument(this._onEvent, this, subscriptions);
-    this._disposable = import_vscode4.Disposable.from(...subscriptions);
-  }
-  _onEvent({ contentChanges, document }) {
-    if (!contentChanges.find((change) => change.text.match(/[\n=EXTERNAL]/i))) return;
-    const { fsPath } = document.uri;
-    functionMaps[fsPath] = FunctionMap.fromDocument(document);
-  }
-  dispose() {
-    this._disposable.dispose();
+    super(functionMaps, /[\n=]|EXTERNAL/, FunctionMap.fromDocument);
   }
 };
-function generateFunctionMaps() {
-  return Promise.all([
-    import_vscode4.workspace.findFiles("*.ink"),
-    import_vscode4.workspace.findFiles("**/*.ink")
-  ]).then(([rootFiles, subFiles]) => {
-    const allFiles = [...rootFiles, ...subFiles];
-    const uniqueFiles = Array.from(new Map(allFiles.map((f) => [f.fsPath, f])).values());
-    return Promise.all(uniqueFiles.map(({ fsPath }) => FunctionMap.from(fsPath)));
-  }).then((maps) => {
-    maps.forEach((map) => {
-      functionMaps[map.filePath] = map;
-    });
-    functionMapsDone = true;
-  }).catch((err) => {
-    console.error("Error generating function maps:", err);
-  });
+async function generateFunctionMaps() {
+  Object.assign(functionMaps, await generateMapsFromFiles(FunctionMap.from));
 }
 function getFunctionDefinitionByName(name, filePath) {
-  const localMap = functionMaps[filePath];
-  if (localMap) {
-    const found = localMap.functions.find((f) => f.name === name);
-    if (found) return found;
-  }
-  for (const key in functionMaps) {
-    const map = functionMaps[key];
-    const found = map.functions.find((f) => f.name === name);
-    if (found) return found;
-  }
-  return null;
+  return findDefinition(name, filePath, functionMaps, (m) => m.functions);
 }
 function getVariableDefinitionByName(name, filePath) {
-  const localMap = functionMaps[filePath];
-  if (localMap) {
-    const found = localMap.variables.find((v) => v.name === name);
-    if (found) return found;
-  }
-  for (const key in functionMaps) {
-    const map = functionMaps[key];
-    const found = map.variables.find((v) => v.name === name);
-    if (found) return found;
-  }
-  return null;
+  return findDefinition(name, filePath, functionMaps, (m) => m.variables);
 }
 
-// src/InkFunctionDefinitionProvider.ts
-var InkFunctionDefinitionProvider = class {
+// src/providers/InkFunctionDefinitionProvider.ts
+var InkFunctionDefinitionProvider = class _InkFunctionDefinitionProvider {
+  static {
+    this.functionCallRegex = /\b([\w]+)\s*/;
+  }
   provideDefinition(document, position) {
-    const line = document.lineAt(position.line).text.trim();
-    console.log("Line: ", line);
-    if (!line.startsWith("~")) return;
-    const match = line.match(/\b([\w]+)\s*/);
+    const lineText = document.lineAt(position.line).text;
+    if (!lineText.trimStart().startsWith("~")) return;
+    const match = _InkFunctionDefinitionProvider.functionCallRegex.exec(lineText);
     if (!match) return;
     const functionName = match[1];
     const result = getFunctionDefinitionByName(functionName, document.uri.fsPath);
@@ -500,109 +510,28 @@ var InkFunctionDefinitionProvider = class {
   }
 };
 
-// src/WordCount.ts
+// src/providers/DivertCompletionProvider.ts
 var import_vscode6 = require("vscode");
-var WordAndNodeCounter = class _WordAndNodeCounter {
-  plural(n, word) {
-    return `${n} ${n === 1 ? word : `${word}s`}`;
+var DivertCompletionProvider = class _DivertCompletionProvider {
+  static {
+    this.divertPattern = /(->|<-) ?$/;
   }
-  updateWordCount() {
-    if (!this._statusBarItem)
-      this._statusBarItem = import_vscode6.window.createStatusBarItem(import_vscode6.StatusBarAlignment.Left);
-    let editor = import_vscode6.window.activeTextEditor;
-    if (!editor) {
-      this._statusBarItem.hide();
-      return;
-    }
-    let doc = editor.document;
-    if (doc.languageId === "ink") {
-      const docContent = doc.getText();
-      const wordCount = this._getWordCount(docContent);
-      const nodeCount = this._getNodeCount(docContent);
-      this._statusBarItem.text = `$(pencil) ${this.plural(wordCount, "Word")} in ${this.plural(nodeCount, "Node")}`;
-      this._statusBarItem.show();
-    } else {
-      this._statusBarItem.hide();
-    }
+  static {
+    this.doubleArrowPattern = /-> ?-> ?$/;
   }
-  static lineReducer(stack, line) {
-    let { scope, lines } = stack;
-    if (line.match(/^\s*$/)) return stack;
-    if (scope === "multiline") {
-      if (line.match(/\}/) !== null) {
-        scope = "root";
-        return _WordAndNodeCounter.lineReducer({ scope, lines }, line.match(/}(.*)/)[1]);
-      }
-      return stack;
-    }
-    if (scope === "comment") {
-      if (line.match(/\*\//) !== null) {
-        scope = "root";
-        return _WordAndNodeCounter.lineReducer({ scope, lines }, line.match(/\*\/(.*)/)[1]);
-      }
-      return stack;
-    }
-    if (line.match(/\{/) !== null) {
-      if (line.match(/\}/) !== null)
-        return _WordAndNodeCounter.lineReducer(stack, line.replace(/\{.*\}/, ""));
-      scope = "multiline";
-      return { scope, lines };
-    }
-    if (line.match(/\/\//) !== null) {
-      return _WordAndNodeCounter.lineReducer(stack, line.replace(/\/\/.*/, ""));
-    }
-    if (line.match(/\/\*/)) {
-      if (line.match(/\*\//)) {
-        return _WordAndNodeCounter.lineReducer(stack, line.replace(/\/\*.*\*\//, ""));
-      }
-      scope = "comment";
-      return { scope, lines };
-    }
-    if (line.match(/^\s*(~|=|VAR|EXTERNAL|INCLUDE)/) === null) {
-      lines.push(line);
-    }
-    return { scope, lines };
-  }
-  _getWordCount(docContent) {
-    return docContent.split("\n").reduce(_WordAndNodeCounter.lineReducer, { scope: "root", lines: [] }).lines.join(" ").split(/\s/).filter((word) => word.match(/\w/)).length;
-  }
-  _getNodeCount(docContent) {
-    return docContent.split("\n").filter((line) => line.match(/^\s*=/)).length;
-  }
-  dispose() {
-    this._statusBarItem.dispose();
-  }
-};
-var WordNodeCounterController = class {
-  constructor(wordCounter) {
-    this._wordCounter = wordCounter;
-    this._wordCounter.updateWordCount();
-    let subscriptions = [];
-    import_vscode6.window.onDidChangeTextEditorSelection(this._onEvent, this, subscriptions);
-    import_vscode6.window.onDidChangeActiveTextEditor(this._onEvent, this, subscriptions);
-    this._disposable = import_vscode6.Disposable.from(...subscriptions);
-  }
-  _onEvent() {
-    this._wordCounter.updateWordCount();
-  }
-  dispose() {
-    this._disposable.dispose();
-  }
-};
-
-// src/Completion.ts
-var import_vscode7 = require("vscode");
-var DivertCompletionProvider = class {
   provideCompletionItems(document, position) {
-    const before = document.getText(new import_vscode7.Range(position.with(position.line, 0), position));
-    if (!/(->|<-) ?$/.test(before)) return;
-    if (/-> ?-> ?$/.test(before)) return;
+    const lineText = document.getText(new import_vscode6.Range(
+      position.with(position.line, 0),
+      position
+    ));
+    if (!_DivertCompletionProvider.divertPattern.test(lineText)) return;
+    if (_DivertCompletionProvider.doubleArrowPattern.test(lineText)) return;
     return getDivertCompletionTargets(document.uri.fsPath, position.line);
   }
 };
 
-// src/InkVariableDefinitionProvider.ts
-var import_vscode8 = require("vscode");
+// src/providers/InkVariableDefinitionProvider.ts
+var import_vscode7 = require("vscode");
 var InkVariableDefinitionProvider = class {
   provideDefinition(document, position) {
     const wordRange = document.getWordRangeAtPosition(position);
@@ -611,27 +540,136 @@ var InkVariableDefinitionProvider = class {
     if (!variableName) return;
     const result = getVariableDefinitionByName(variableName, document.uri.fsPath);
     if (!result) return;
-    return new import_vscode8.Location(import_vscode8.Uri.file(result.filePath), new import_vscode8.Position(result.line, 0));
+    return new import_vscode7.Location(import_vscode7.Uri.file(result.filePath), new import_vscode7.Position(result.line, 0));
+  }
+};
+
+// src/controllers/WordCountController.ts
+var import_vscode8 = require("vscode");
+var WordNodeCounterController = class {
+  constructor(wordCounter) {
+    this.wordCounter = wordCounter;
+    this.wordCounter.updateWordCount();
+    const subscriptions = [
+      import_vscode8.window.onDidChangeTextEditorSelection(this._onEvent, this),
+      import_vscode8.window.onDidChangeActiveTextEditor(this._onEvent, this)
+    ];
+    this._disposable = import_vscode8.Disposable.from(...subscriptions);
+  }
+  _onEvent() {
+    this.wordCounter.updateWordCount();
+  }
+  dispose() {
+    this._disposable.dispose();
+  }
+};
+
+// src/controllers/WordCounterService.ts
+var import_vscode9 = require("vscode");
+var WordCounterService = class {
+  plural(n, word) {
+    return `${n} ${word}${n === 1 ? "" : "s"}`;
+  }
+  updateWordCount() {
+    const editor = import_vscode9.window.activeTextEditor;
+    if (!editor) {
+      this._statusBarItem.hide();
+      return;
+    }
+    const doc = editor.document;
+    if (doc.languageId !== "ink") {
+      this._statusBarItem.hide();
+      return;
+    }
+    if (!this._statusBarItem) {
+      this._statusBarItem = import_vscode9.window.createStatusBarItem(import_vscode9.StatusBarAlignment.Left);
+    }
+    const docContent = doc.getText();
+    const wordCount = this._getWordCount(docContent);
+    const nodeCount = this._getNodeCount(docContent);
+    this._statusBarItem.text = `$(pencil) ${this.plural(wordCount, "word")} in ${this.plural(nodeCount, "node")}`;
+    this._statusBarItem.show();
+  }
+  _getWordCount(content) {
+    const lines = content.split("\n");
+    const cleaned = this._stripMultilineBlocks(lines).map((line) => this._stripCommentsAndBlocks(line)).filter((line) => this._isNarrativeLine(line));
+    const text = cleaned.join(" ");
+    return text.split(/\s+/).filter((word) => /\w/.test(word)).length;
+  }
+  _stripCommentsAndBlocks(line) {
+    line = line.replace(/\/\/.*$/, "");
+    line = line.replace(/\{.*?\}/g, "");
+    line = line.replace(/\/\*.*?\*\//g, "");
+    return line.trim();
+  }
+  _isNarrativeLine(line) {
+    if (line.trim().length === 0) return false;
+    if (/^\s*(~|=|VAR|EXTERNAL|INCLUDE)/.test(line)) return false;
+    return true;
+  }
+  _stripMultilineBlocks(lines) {
+    let inBlock = false;
+    let inComment = false;
+    const result = [];
+    for (let line of lines) {
+      if (inBlock) {
+        if (line.includes("}")) {
+          inBlock = false;
+          line = line.split("}")[1] || "";
+        } else continue;
+      }
+      if (inComment) {
+        if (line.includes("*/")) {
+          inComment = false;
+          line = line.split("*/")[1] || "";
+        } else continue;
+      }
+      if (line.includes("/*") && !line.includes("*/")) {
+        inComment = true;
+        continue;
+      }
+      if (line.includes("{") && !line.includes("}")) {
+        inBlock = true;
+        continue;
+      }
+      result.push(line);
+    }
+    return result;
+  }
+  _getNodeCount(docContent) {
+    return docContent.split("\n").filter((line) => line.match(/^\s*=/)).length;
+  }
+  dispose() {
+    this._statusBarItem.dispose();
   }
 };
 
 // src/extension.ts
 var INK = { language: "ink" };
-function activate(ctx) {
-  const wordCounter = new WordAndNodeCounter();
-  const wcController = new WordNodeCounterController(wordCounter);
-  const nodeMapController = new NodeController();
-  const functionMapper = new FunctionController();
-  import_vscode9.window.withProgress({ location: import_vscode9.ProgressLocation.Window, title: "Mapping knots and stitches..." }, generateMaps);
-  import_vscode9.window.withProgress({ location: import_vscode9.ProgressLocation.Window, title: "Mapping function declarations..." }, generateFunctionMaps);
-  ctx.subscriptions.push(wcController);
-  ctx.subscriptions.push(wordCounter);
-  ctx.subscriptions.push(nodeMapController);
-  ctx.subscriptions.push(functionMapper);
-  ctx.subscriptions.push(import_vscode9.languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), ">", "-", " "));
-  ctx.subscriptions.push(import_vscode9.languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()));
-  ctx.subscriptions.push(import_vscode9.languages.registerDefinitionProvider(INK, new InkFunctionDefinitionProvider()));
-  ctx.subscriptions.push(import_vscode9.languages.registerDefinitionProvider(INK, new InkVariableDefinitionProvider()));
+function activate(context) {
+  const disposables = [];
+  const wordCounter = new WordCounterService();
+  const wordCounterController = new WordNodeCounterController(wordCounter);
+  const nodeController = new NodeController();
+  const functionController = new FunctionController();
+  disposables.push(wordCounter, wordCounterController, nodeController, functionController);
+  (async () => {
+    try {
+      await Promise.all([
+        import_vscode10.window.withProgress({ location: import_vscode10.ProgressLocation.Window, title: "Mapping knots and stitches..." }, generateNodeMaps),
+        import_vscode10.window.withProgress({ location: import_vscode10.ProgressLocation.Window, title: "Mapping function declarations..." }, generateFunctionMaps)
+      ]);
+    } catch (err) {
+      console.error("Error while mapping:", err);
+    }
+  })();
+  disposables.push(
+    import_vscode10.languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), ">", "-", " "),
+    import_vscode10.languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()),
+    import_vscode10.languages.registerDefinitionProvider(INK, new InkFunctionDefinitionProvider()),
+    import_vscode10.languages.registerDefinitionProvider(INK, new InkVariableDefinitionProvider())
+  );
+  context.subscriptions.push(...disposables);
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {

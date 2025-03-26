@@ -1,21 +1,7 @@
 import { TextDocument, workspace } from "vscode";
 import * as fs from "fs";
-import * as path from "path";
-
-export interface FunctionDefinition {
-    name: string;
-    line: number;
-    filePath: string;
-    type: "EXTERNAL" | "FUNCTION"; // distinguishes between the two formats
-}
-
-export interface VariableDefinition {
-    name: string;
-    line: number;
-    filePath: string;
-    type: "VAR" | "TEMP";
-}
-
+import { FunctionDefinition } from "./definitions/FunctionDefinition";
+import { VariableDefinition } from "./definitions/VariableDefinition";
 
 export class FunctionMap {
     public readonly filePath: string;

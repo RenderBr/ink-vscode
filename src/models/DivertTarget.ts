@@ -1,16 +1,21 @@
 import { CompletionItem, CompletionItemKind } from "vscode";
 import { NodeMap } from "./NodeMap";
 
-export class DivertTarget {
-    constructor(public readonly name: string | null) { }
-    public get line(): number {
-        throw new Error("line accessor must be overridden in subclass");
+export abstract class DivertTarget {
+    constructor(public readonly name: string | null) {}
 
-    };
-    public get parentFile(): NodeMap {
-        throw new Error("parentFile accessor must be implemented in subclass");
+    get line(): number 
+    {
+        throw new Error("Subclasses must implement 'line' getter");
     }
-    public toCompletionItem(): CompletionItem {
-        return new CompletionItem(this.name, CompletionItemKind.Reference);
+
+    get parentFile(): NodeMap 
+    {
+        throw new Error("Subclasses must implement 'parentFile' getter");
+    }
+
+    toCompletionItem(): CompletionItem 
+    {
+        return new CompletionItem(this.name ?? "", CompletionItemKind.Reference);
     }
 }

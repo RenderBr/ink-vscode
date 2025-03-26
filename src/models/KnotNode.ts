@@ -4,14 +4,10 @@ import { StitchNode } from "./StitchNode";
 import { NodeMap } from "./NodeMap";
 
 export class KnotNode extends DivertTarget {
+    public readonly stitches: StitchNode[];
 
-    public readonly stitches;
-
-    public get line() {
-        return this.startLine;
-    }
-
-    constructor(
+    constructor
+    (
         public readonly name: string | null,
         public readonly startLine: number,
         public readonly endLine: number,
@@ -19,45 +15,73 @@ export class KnotNode extends DivertTarget {
         textContent: string,
         private readonly isFunction: boolean = false,
         private readonly lastLine: boolean = false
-    ) {
+    ) 
+    {
         super(name);
-        const lines = textContent.split("\n");
-        this.stitches = lines
-            .reduce((
-                { nodes, currentNode, lastStart, lastName }
-                    : { nodes: StitchNode[], currentNode: string[], lastStart: number, lastName: string | null }
-                , line: string
-                , index: number) => {
-                if (line.match(/^\s*={1}\s*(\w+)/)) {
-                    // Found the start of a new stitch.
-                    const newName = line.match(/^\s*={1}\s*(\w+)/)[1];
-                    const node = new StitchNode(lastName, lastStart, index, this, currentNode.join("\n"));
-                    nodes.push(node);
-                    if (index === lines.length - 1) {
-                        // The new stitch is also the last line of the knot.
-                        const node = new StitchNode(newName, index, index + 1, this, currentNode.join("\n"), this.lastLine);
-                        nodes.push(node);
-                    }
-                    return { nodes, currentNode: [line], lastStart: index, lastName: newName };
-                }
-                if (index === lines.length - 1) {
-                    // Found the last line.
-                    const node = new StitchNode(lastName, lastStart, index + 1, this, currentNode.join("\n"), this.lastLine);
-                    nodes.push(node);
-                    return { nodes, currentNode: [line], lastStart: index, lastName: null };
-                }
-                currentNode.push(line);
-                return { nodes, currentNode, lastStart, lastName };
-            }, { nodes: [], currentNode: [], lastStart: 0, lastName: null })
-            .nodes;
+        this.stitches = this._parseStitches(textContent);
     }
 
-    public get parentFile(): NodeMap {
+    public get line(): number
+    {
+        return this.startLine;
+    }
+
+    public get parentFile(): NodeMap 
+    {
         return this._parentFile;
     }
 
-    public toCompletionItem(): CompletionItem {
+    public toCompletionItem(): CompletionItem 
+    {
         const itemKind = this.isFunction ? CompletionItemKind.Function : CompletionItemKind.Reference;
-        return new CompletionItem(this.name, itemKind);
+        return new CompletionItem(this.name ?? "", itemKind);
     }
+
+    private _parseStitches(content: string): StitchNode[] 
+    {
+        // split content into lines
+        const lines = content.split("\n");
+        const stitches: StitchNode[] = [];
+      
+        const stitchRegex = /^\s*=\s*(\w+)/;
+      
+        // track current stitch
+        let currentName: string | null = null;
+        let currentStart = 0;
+        let currentLines: string[] = [];
+      
+        // push current stitch to stitches array
+        const pushStitch = (end: number, isFinal: boolean = false) => {
+          if (!currentName) return;
+          const text = currentLines.join("\n");
+          stitches.push(new StitchNode(currentName, currentStart, end, this, text, isFinal));
+        };
+      
+        // iterate through lines and parse stitches
+        for (let i = 0; i < lines.length; i++) {
+          const line = lines[i];
+          const match = stitchRegex.exec(line);
+      
+          if (match) {
+            // push previous before starting new
+            if (currentLines.length > 0) {
+              pushStitch(i);
+            }
+      
+            currentName = match[1];
+            currentStart = i;
+            currentLines = [line];
+          } else {
+            currentLines.push(line);
+          }
+      
+          // last line handling
+          const isLastLine = i === lines.length - 1;
+          if (isLastLine && currentName) {
+            pushStitch(i + 1, this.lastLine);
+          }
+        }
+      
+        return stitches;
+    }      
 }
