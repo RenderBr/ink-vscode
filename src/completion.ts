@@ -1,6 +1,6 @@
 import { CompletionItemProvider, TextDocument, Position, CancellationToken, CompletionItem, Range, CompletionItemKind, workspace } from "vscode";
-import * as NodeMap from "./nodemap";
 import * as fs from "fs";
+import { getDivertCompletionTargets } from "./models/NodeController";
 
 export class DivertCompletionProvider implements CompletionItemProvider {
 
@@ -10,7 +10,6 @@ export class DivertCompletionProvider implements CompletionItemProvider {
         const before = document.getText(new Range(position.with(position.line, 0), position));
         if (!/(->|<-) ?$/.test(before)) return;
         if (/-> ?-> ?$/.test(before)) return;
-        return NodeMap.getDivertCompletionTargets(document.uri.fsPath, position.line);
+        return getDivertCompletionTargets(document.uri.fsPath, position.line);
     }
-
 }

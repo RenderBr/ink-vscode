@@ -547,7 +547,7 @@
               <key>1</key>
               <dict>
                 <key>name</key>
-                <string>punctuation.definition.string.begin.ink</string>
+                <string>punctuation.definition.string.begin.ink string.quoted.double.ink</string>
               </dict>
             </dict>
             <key>end</key>
@@ -557,7 +557,7 @@
               <key>1</key>
               <dict>
                 <key>name</key>
-                <string>punctuation.definition.string.end.ink</string>
+                <string>punctuation.definition.string.end.ink string.quoted.double.ink</string>
               </dict>
             </dict>
             <key>patterns</key>

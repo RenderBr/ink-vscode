@@ -3,10 +3,11 @@ import {
     Location,
     TextDocument,
     Position,
-    ProviderResult
+    ProviderResult,
+    Uri
   } from "vscode";
+import { getFunctionDefinitionByName } from "./models/FunctionController";
   
-  import { getDefinitionByNameAndScope } from "./nodemap";
   
   export class InkFunctionDefinitionProvider implements DefinitionProvider {
     public provideDefinition(
@@ -15,17 +16,20 @@ import {
     ): ProviderResult<Location> {
       const line = document.lineAt(position.line).text.trim();
   
+      console.log("Line: ", line);
       // only care about logic lines
       if (!line.startsWith("~")) return;
   
       // try to find a function call: something like `myFunction(...)`
-      const match = line.match(/\b([\w]+)\s*\(/);
+      const match = line.match(/\b([\w]+)\s*/);
       if (!match) return;
   
       const functionName = match[1];
-  
-      // use same helper, assuming it supports function name lookup too
-      return getDefinitionByNameAndScope(functionName, document.uri.fsPath, position.line);
+
+      const result = getFunctionDefinitionByName(functionName, document.uri.fsPath);
+      if (!result) return;
+      
+      return new Location(Uri.file(result.filePath), new Position(result.line, 0));
     }
   }
   

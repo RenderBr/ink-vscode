@@ -5,7 +5,7 @@ import {
   Position,
   ProviderResult
 } from "vscode";
-import { getDefinitionByNameAndScope } from "./nodemap";
+import { getDefinitionByNameAndScope } from "./models/NodeController";
 
 export class InkDivertDefinitionProvider implements DefinitionProvider {
   public provideDefinition(

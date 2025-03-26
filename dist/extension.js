@@ -27,116 +27,26 @@ var __toESM = (mod, isNodeMode, target) => (target = mod != null ? __create(__ge
 ));
 var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: true }), mod);
 
-// src/extension.ts
-var extension_exports = {};
-__export(extension_exports, {
+// src/Extension.ts
+var Extension_exports = {};
+__export(Extension_exports, {
   activate: () => activate
 });
-module.exports = __toCommonJS(extension_exports);
-var import_vscode4 = require("vscode");
+module.exports = __toCommonJS(Extension_exports);
+var import_vscode9 = require("vscode");
 
-// src/wordcount.ts
-var import_vscode = require("vscode");
-var WordAndNodeCounter = class _WordAndNodeCounter {
-  plural(n, word) {
-    return `${n} ${n === 1 ? word : `${word}s`}`;
-  }
-  updateWordCount() {
-    if (!this._statusBarItem)
-      this._statusBarItem = import_vscode.window.createStatusBarItem(import_vscode.StatusBarAlignment.Left);
-    let editor = import_vscode.window.activeTextEditor;
-    if (!editor) {
-      this._statusBarItem.hide();
-      return;
-    }
-    let doc = editor.document;
-    if (doc.languageId === "ink") {
-      const docContent = doc.getText();
-      const wordCount = this._getWordCount(docContent);
-      const nodeCount = this._getNodeCount(docContent);
-      this._statusBarItem.text = `$(pencil) ${this.plural(wordCount, "Word")} in ${this.plural(nodeCount, "Node")}`;
-      this._statusBarItem.show();
-    } else {
-      this._statusBarItem.hide();
-    }
-  }
-  static lineReducer(stack, line) {
-    let { scope, lines } = stack;
-    if (line.match(/^\s*$/)) return stack;
-    if (scope === "multiline") {
-      if (line.match(/\}/) !== null) {
-        scope = "root";
-        return _WordAndNodeCounter.lineReducer({ scope, lines }, line.match(/}(.*)/)[1]);
-      }
-      return stack;
-    }
-    if (scope === "comment") {
-      if (line.match(/\*\//) !== null) {
-        scope = "root";
-        return _WordAndNodeCounter.lineReducer({ scope, lines }, line.match(/\*\/(.*)/)[1]);
-      }
-      return stack;
-    }
-    if (line.match(/\{/) !== null) {
-      if (line.match(/\}/) !== null)
-        return _WordAndNodeCounter.lineReducer(stack, line.replace(/\{.*\}/, ""));
-      scope = "multiline";
-      return { scope, lines };
-    }
-    if (line.match(/\/\//) !== null) {
-      return _WordAndNodeCounter.lineReducer(stack, line.replace(/\/\/.*/, ""));
-    }
-    if (line.match(/\/\*/)) {
-      if (line.match(/\*\//)) {
-        return _WordAndNodeCounter.lineReducer(stack, line.replace(/\/\*.*\*\//, ""));
-      }
-      scope = "comment";
-      return { scope, lines };
-    }
-    if (line.match(/^\s*(~|=|VAR|EXTERNAL|INCLUDE)/) === null) {
-      lines.push(line);
-    }
-    return { scope, lines };
-  }
-  _getWordCount(docContent) {
-    return docContent.split("\n").reduce(_WordAndNodeCounter.lineReducer, { scope: "root", lines: [] }).lines.join(" ").split(/\s/).filter((word) => word.match(/\w/)).length;
-  }
-  _getNodeCount(docContent) {
-    return docContent.split("\n").filter((line) => line.match(/^\s*=/)).length;
-  }
-  dispose() {
-    this._statusBarItem.dispose();
-  }
-};
-var WordNodeCounterController = class {
-  constructor(wordCounter) {
-    this._wordCounter = wordCounter;
-    this._wordCounter.updateWordCount();
-    let subscriptions = [];
-    import_vscode.window.onDidChangeTextEditorSelection(this._onEvent, this, subscriptions);
-    import_vscode.window.onDidChangeActiveTextEditor(this._onEvent, this, subscriptions);
-    this._disposable = import_vscode.Disposable.from(...subscriptions);
-  }
-  _onEvent() {
-    this._wordCounter.updateWordCount();
-  }
-  dispose() {
-    this._disposable.dispose();
-  }
-};
-
-// src/completion.ts
+// src/models/NodeController.ts
 var import_vscode3 = require("vscode");
 
-// src/nodemap.ts
+// src/models/NodeMap.ts
+var import_path = __toESM(require("path"));
+var import_fs = __toESM(require("fs"));
+
+// src/models/KnotNode.ts
 var import_vscode2 = require("vscode");
-var fs = __toESM(require("fs"));
-var path = __toESM(require("path"));
-var PERMANENT_DIVERTS = [
-  new import_vscode2.CompletionItem("END", import_vscode2.CompletionItemKind.Keyword),
-  new import_vscode2.CompletionItem("DONE", import_vscode2.CompletionItemKind.Keyword),
-  new import_vscode2.CompletionItem("->", import_vscode2.CompletionItemKind.Keyword)
-];
+
+// src/models/DivertTarget.ts
+var import_vscode = require("vscode");
 var DivertTarget = class {
   constructor(name) {
     this.name = name;
@@ -148,9 +58,11 @@ var DivertTarget = class {
     throw new Error("parentFile accessor must be implemented in subclass");
   }
   toCompletionItem() {
-    return new import_vscode2.CompletionItem(this.name, import_vscode2.CompletionItemKind.Reference);
+    return new import_vscode.CompletionItem(this.name, import_vscode.CompletionItemKind.Reference);
   }
 };
+
+// src/models/LabelNode.ts
 var LabelNode = class extends DivertTarget {
   constructor(name, _line, parentStitch) {
     super(name);
@@ -165,6 +77,8 @@ var LabelNode = class extends DivertTarget {
     return this.parentStitch.parentKnot.parentFile;
   }
 };
+
+// src/models/StitchNode.ts
 var StitchNode = class extends DivertTarget {
   constructor(name, _relativeStart, _relativeEnd, parentKnot, textContent, lastLine = false) {
     super(name);
@@ -188,6 +102,8 @@ var StitchNode = class extends DivertTarget {
     return this.parentKnot.startLine + this._relativeEnd + (this.lastLine ? 1 : 0);
   }
 };
+
+// src/models/KnotNode.ts
 var KnotNode = class extends DivertTarget {
   constructor(name, startLine, endLine, _parentFile, textContent, isFunction = false, lastLine = false) {
     super(name);
@@ -229,6 +145,8 @@ var KnotNode = class extends DivertTarget {
     return new import_vscode2.CompletionItem(this.name, itemKind);
   }
 };
+
+// src/models/NodeMap.ts
 var NodeMap = class _NodeMap {
   constructor(filePath, fileText) {
     this.filePath = filePath;
@@ -252,14 +170,17 @@ var NodeMap = class _NodeMap {
     }, { nodes: [], currentNode: [], lastStart: 0, lastName: null, isFunction: false }).nodes;
     this.includes = lines.filter((line) => line.match(/^\s*INCLUDE\s+(\w+\.ink)/)).map((line) => {
       const filename = line.match(/^\s*INCLUDE\s+(\w+\.ink)/)[1];
-      const dirname2 = path.dirname(filePath);
-      return path.normalize(dirname2 + path.sep + filename);
+      const dirname = import_path.default.dirname(filePath);
+      return import_path.default.normalize(dirname + import_path.default.sep + filename);
     });
     console.log("Knots found:", this.knots.map((k) => k.name));
   }
+  static generateMaps(arg0, generateMaps2) {
+    throw new Error("Method not implemented.");
+  }
   static from(filePath) {
     return new Promise((resolve, reject) => {
-      fs.readFile(filePath, "utf8", (err, data) => {
+      import_fs.default.readFile(filePath, "utf8", (err, data) => {
         if (err) return reject(err);
         return resolve(data);
       });
@@ -270,13 +191,38 @@ var NodeMap = class _NodeMap {
     return new _NodeMap(fsPath, document.getText());
   }
 };
+
+// src/models/NodeController.ts
 var nodeMaps = {};
 var mapsDone = false;
+var PERMANENT_DIVERTS = [
+  new import_vscode3.CompletionItem("END", import_vscode3.CompletionItemKind.Keyword),
+  new import_vscode3.CompletionItem("DONE", import_vscode3.CompletionItemKind.Keyword),
+  new import_vscode3.CompletionItem("->", import_vscode3.CompletionItemKind.Keyword)
+];
+function getDivertCompletionTargets(filePath, line) {
+  return getDivertsInScope(filePath, line).filter((target) => target.name !== null).map((target) => target.toCompletionItem()).concat(PERMANENT_DIVERTS);
+}
+var NodeController = class {
+  constructor() {
+    let subscriptions = [];
+    import_vscode3.workspace.onDidChangeTextDocument(this._onEvent, this, subscriptions);
+    this._disposable = import_vscode3.Disposable.from(...subscriptions);
+  }
+  _onEvent({ contentChanges, document }) {
+    if (!contentChanges.find((change) => change.text.match(/[\n\*\+\(\)-=]/) !== null)) return;
+    const { fsPath } = document.uri;
+    nodeMaps[fsPath] = NodeMap.fromDocument(document);
+  }
+  dispose() {
+    this._disposable.dispose();
+  }
+};
 function generateMaps() {
   return Promise.all([
-    import_vscode2.workspace.findFiles("*.ink"),
+    import_vscode3.workspace.findFiles("*.ink"),
     // root directory
-    import_vscode2.workspace.findFiles("**/*.ink")
+    import_vscode3.workspace.findFiles("**/*.ink")
     // subdirectories
   ]).then(([rootFiles, subFiles]) => {
     const allFiles = [...rootFiles, ...subFiles];
@@ -350,38 +296,10 @@ function getDefinitionByNameAndScope(name, filePath, line) {
   if (!divert) {
     throw new Error(`No divert target named '${name}' found in scope at ${filePath}:${line}`);
   }
-  return new import_vscode2.Location(import_vscode2.Uri.file(divert.parentFile.filePath), new import_vscode2.Position(divert.line, 0));
+  return new import_vscode3.Location(import_vscode3.Uri.file(divert.parentFile.filePath), new import_vscode3.Position(divert.line, 0));
 }
-function getDivertCompletionTargets(filePath, line) {
-  return getDivertsInScope(filePath, line).filter((target) => target.name !== null).map((target) => target.toCompletionItem()).concat(PERMANENT_DIVERTS);
-}
-var NodeController = class {
-  constructor() {
-    let subscriptions = [];
-    import_vscode2.workspace.onDidChangeTextDocument(this._onEvent, this, subscriptions);
-    this._disposable = import_vscode2.Disposable.from(...subscriptions);
-  }
-  _onEvent({ contentChanges, document }) {
-    if (!contentChanges.find((change) => change.text.match(/[\n\*\+\(\)-=]/) !== null)) return;
-    const { fsPath } = document.uri;
-    nodeMaps[fsPath] = NodeMap.fromDocument(document);
-  }
-  dispose() {
-    this._disposable.dispose();
-  }
-};
 
-// src/completion.ts
-var DivertCompletionProvider = class {
-  provideCompletionItems(document, position) {
-    const before = document.getText(new import_vscode3.Range(position.with(position.line, 0), position));
-    if (!/(->|<-) ?$/.test(before)) return;
-    if (/-> ?-> ?$/.test(before)) return;
-    return getDivertCompletionTargets(document.uri.fsPath, position.line);
-  }
-};
-
-// src/definitions.ts
+// src/InkDivertDefinitionProvider.ts
 var InkDivertDefinitionProvider = class {
   provideDefinition(document, position) {
     const line = document.lineAt(position.line).text;
@@ -396,21 +314,327 @@ var InkDivertDefinitionProvider = class {
   }
 };
 
-// src/extension.ts
+// src/InkFunctionDefinitionProvider.ts
+var import_vscode5 = require("vscode");
+
+// src/models/FunctionController.ts
+var import_vscode4 = require("vscode");
+
+// src/models/FunctionMap.ts
+var fs2 = __toESM(require("fs"));
+var FunctionMap = class _FunctionMap {
+  constructor(filePath, functions, variables) {
+    this.functions = [];
+    this.variables = [];
+    this.filePath = filePath;
+    this.functions = functions;
+    this.variables = variables;
+  }
+  static fromDocument(doc) {
+    const filePath = doc.uri.fsPath;
+    const text = doc.getText();
+    const lines = text.split(/\r?\n/);
+    const functions = [];
+    const variables = [];
+    lines.forEach((line, i) => {
+      const externalMatch = line.match(/^\s*EXTERNAL\s+(\w+)\s*\(/i);
+      if (externalMatch) {
+        functions.push({
+          name: externalMatch[1],
+          line: i,
+          filePath,
+          type: "EXTERNAL"
+        });
+      }
+      const functionMatch = line.match(/^\s*===\s*function\s+(\w+)\s*/i);
+      if (functionMatch) {
+        functions.push({
+          name: functionMatch[1],
+          line: i,
+          filePath,
+          type: "FUNCTION"
+        });
+      }
+      const varMatch = line.match(/^\s*VAR\s+(\w+)\s*=/i);
+      if (varMatch) {
+        variables.push({
+          name: varMatch[1],
+          line: i,
+          filePath,
+          type: "VAR"
+        });
+      }
+      const tempMatch = line.match(/^\s*~\s*temp\s+(\w+)\s*=/i);
+      if (tempMatch) {
+        variables.push({
+          name: tempMatch[1],
+          line: i,
+          filePath,
+          type: "TEMP"
+        });
+      }
+    });
+    return new _FunctionMap(filePath, functions, variables);
+  }
+  static async from(filePath) {
+    const content = fs2.readFileSync(filePath, "utf8");
+    const lines = content.split(/\r?\n/);
+    const functions = [];
+    const variables = [];
+    lines.forEach((line, i) => {
+      const externalMatch = line.match(/^\s*EXTERNAL\s+(\w+)\s*\(/i);
+      if (externalMatch) {
+        functions.push({
+          name: externalMatch[1],
+          line: i,
+          filePath,
+          type: "EXTERNAL"
+        });
+      }
+      const functionMatch = line.match(/^\s*===\s*function\s+(\w+)\s*/i);
+      if (functionMatch) {
+        functions.push({
+          name: functionMatch[1],
+          line: i,
+          filePath,
+          type: "FUNCTION"
+        });
+      }
+      const varMatch = line.match(/^\s*VAR\s+(\w+)\s*=/i);
+      if (varMatch) {
+        variables.push({
+          name: varMatch[1],
+          line: i,
+          filePath,
+          type: "VAR"
+        });
+      }
+      const tempMatch = line.match(/^\s*~\s*temp\s+(\w+)\s*=/i);
+      if (tempMatch) {
+        variables.push({
+          name: tempMatch[1],
+          line: i,
+          filePath,
+          type: "TEMP"
+        });
+      }
+    });
+    return new _FunctionMap(filePath, functions, variables);
+  }
+};
+
+// src/models/FunctionController.ts
+var functionMaps = {};
+var functionMapsDone = false;
+var FunctionController = class {
+  constructor() {
+    let subscriptions = [];
+    import_vscode4.workspace.onDidChangeTextDocument(this._onEvent, this, subscriptions);
+    this._disposable = import_vscode4.Disposable.from(...subscriptions);
+  }
+  _onEvent({ contentChanges, document }) {
+    if (!contentChanges.find((change) => change.text.match(/[\n=EXTERNAL]/i))) return;
+    const { fsPath } = document.uri;
+    functionMaps[fsPath] = FunctionMap.fromDocument(document);
+  }
+  dispose() {
+    this._disposable.dispose();
+  }
+};
+function generateFunctionMaps() {
+  return Promise.all([
+    import_vscode4.workspace.findFiles("*.ink"),
+    import_vscode4.workspace.findFiles("**/*.ink")
+  ]).then(([rootFiles, subFiles]) => {
+    const allFiles = [...rootFiles, ...subFiles];
+    const uniqueFiles = Array.from(new Map(allFiles.map((f) => [f.fsPath, f])).values());
+    return Promise.all(uniqueFiles.map(({ fsPath }) => FunctionMap.from(fsPath)));
+  }).then((maps) => {
+    maps.forEach((map) => {
+      functionMaps[map.filePath] = map;
+    });
+    functionMapsDone = true;
+  }).catch((err) => {
+    console.error("Error generating function maps:", err);
+  });
+}
+function getFunctionDefinitionByName(name, filePath) {
+  const localMap = functionMaps[filePath];
+  if (localMap) {
+    const found = localMap.functions.find((f) => f.name === name);
+    if (found) return found;
+  }
+  for (const key in functionMaps) {
+    const map = functionMaps[key];
+    const found = map.functions.find((f) => f.name === name);
+    if (found) return found;
+  }
+  return null;
+}
+function getVariableDefinitionByName(name, filePath) {
+  const localMap = functionMaps[filePath];
+  if (localMap) {
+    const found = localMap.variables.find((v) => v.name === name);
+    if (found) return found;
+  }
+  for (const key in functionMaps) {
+    const map = functionMaps[key];
+    const found = map.variables.find((v) => v.name === name);
+    if (found) return found;
+  }
+  return null;
+}
+
+// src/InkFunctionDefinitionProvider.ts
+var InkFunctionDefinitionProvider = class {
+  provideDefinition(document, position) {
+    const line = document.lineAt(position.line).text.trim();
+    console.log("Line: ", line);
+    if (!line.startsWith("~")) return;
+    const match = line.match(/\b([\w]+)\s*/);
+    if (!match) return;
+    const functionName = match[1];
+    const result = getFunctionDefinitionByName(functionName, document.uri.fsPath);
+    if (!result) return;
+    return new import_vscode5.Location(import_vscode5.Uri.file(result.filePath), new import_vscode5.Position(result.line, 0));
+  }
+};
+
+// src/WordCount.ts
+var import_vscode6 = require("vscode");
+var WordAndNodeCounter = class _WordAndNodeCounter {
+  plural(n, word) {
+    return `${n} ${n === 1 ? word : `${word}s`}`;
+  }
+  updateWordCount() {
+    if (!this._statusBarItem)
+      this._statusBarItem = import_vscode6.window.createStatusBarItem(import_vscode6.StatusBarAlignment.Left);
+    let editor = import_vscode6.window.activeTextEditor;
+    if (!editor) {
+      this._statusBarItem.hide();
+      return;
+    }
+    let doc = editor.document;
+    if (doc.languageId === "ink") {
+      const docContent = doc.getText();
+      const wordCount = this._getWordCount(docContent);
+      const nodeCount = this._getNodeCount(docContent);
+      this._statusBarItem.text = `$(pencil) ${this.plural(wordCount, "Word")} in ${this.plural(nodeCount, "Node")}`;
+      this._statusBarItem.show();
+    } else {
+      this._statusBarItem.hide();
+    }
+  }
+  static lineReducer(stack, line) {
+    let { scope, lines } = stack;
+    if (line.match(/^\s*$/)) return stack;
+    if (scope === "multiline") {
+      if (line.match(/\}/) !== null) {
+        scope = "root";
+        return _WordAndNodeCounter.lineReducer({ scope, lines }, line.match(/}(.*)/)[1]);
+      }
+      return stack;
+    }
+    if (scope === "comment") {
+      if (line.match(/\*\//) !== null) {
+        scope = "root";
+        return _WordAndNodeCounter.lineReducer({ scope, lines }, line.match(/\*\/(.*)/)[1]);
+      }
+      return stack;
+    }
+    if (line.match(/\{/) !== null) {
+      if (line.match(/\}/) !== null)
+        return _WordAndNodeCounter.lineReducer(stack, line.replace(/\{.*\}/, ""));
+      scope = "multiline";
+      return { scope, lines };
+    }
+    if (line.match(/\/\//) !== null) {
+      return _WordAndNodeCounter.lineReducer(stack, line.replace(/\/\/.*/, ""));
+    }
+    if (line.match(/\/\*/)) {
+      if (line.match(/\*\//)) {
+        return _WordAndNodeCounter.lineReducer(stack, line.replace(/\/\*.*\*\//, ""));
+      }
+      scope = "comment";
+      return { scope, lines };
+    }
+    if (line.match(/^\s*(~|=|VAR|EXTERNAL|INCLUDE)/) === null) {
+      lines.push(line);
+    }
+    return { scope, lines };
+  }
+  _getWordCount(docContent) {
+    return docContent.split("\n").reduce(_WordAndNodeCounter.lineReducer, { scope: "root", lines: [] }).lines.join(" ").split(/\s/).filter((word) => word.match(/\w/)).length;
+  }
+  _getNodeCount(docContent) {
+    return docContent.split("\n").filter((line) => line.match(/^\s*=/)).length;
+  }
+  dispose() {
+    this._statusBarItem.dispose();
+  }
+};
+var WordNodeCounterController = class {
+  constructor(wordCounter) {
+    this._wordCounter = wordCounter;
+    this._wordCounter.updateWordCount();
+    let subscriptions = [];
+    import_vscode6.window.onDidChangeTextEditorSelection(this._onEvent, this, subscriptions);
+    import_vscode6.window.onDidChangeActiveTextEditor(this._onEvent, this, subscriptions);
+    this._disposable = import_vscode6.Disposable.from(...subscriptions);
+  }
+  _onEvent() {
+    this._wordCounter.updateWordCount();
+  }
+  dispose() {
+    this._disposable.dispose();
+  }
+};
+
+// src/Completion.ts
+var import_vscode7 = require("vscode");
+var DivertCompletionProvider = class {
+  provideCompletionItems(document, position) {
+    const before = document.getText(new import_vscode7.Range(position.with(position.line, 0), position));
+    if (!/(->|<-) ?$/.test(before)) return;
+    if (/-> ?-> ?$/.test(before)) return;
+    return getDivertCompletionTargets(document.uri.fsPath, position.line);
+  }
+};
+
+// src/InkVariableDefinitionProvider.ts
+var import_vscode8 = require("vscode");
+var InkVariableDefinitionProvider = class {
+  provideDefinition(document, position) {
+    const wordRange = document.getWordRangeAtPosition(position);
+    if (!wordRange) return;
+    const variableName = document.getText(wordRange);
+    if (!variableName) return;
+    const result = getVariableDefinitionByName(variableName, document.uri.fsPath);
+    if (!result) return;
+    return new import_vscode8.Location(import_vscode8.Uri.file(result.filePath), new import_vscode8.Position(result.line, 0));
+  }
+};
+
+// src/Extension.ts
 var INK = { language: "ink" };
 function activate(ctx) {
   const wordCounter = new WordAndNodeCounter();
   const wcController = new WordNodeCounterController(wordCounter);
   const nodeMapController = new NodeController();
-  import_vscode4.window.withProgress({ location: import_vscode4.ProgressLocation.Window, title: "Mapping knots and stitches..." }, generateMaps);
+  const functionMapper = new FunctionController();
+  import_vscode9.window.withProgress({ location: import_vscode9.ProgressLocation.Window, title: "Mapping knots and stitches..." }, generateMaps);
+  import_vscode9.window.withProgress({ location: import_vscode9.ProgressLocation.Window, title: "Mapping function declarations..." }, generateFunctionMaps);
   ctx.subscriptions.push(wcController);
   ctx.subscriptions.push(wordCounter);
   ctx.subscriptions.push(nodeMapController);
-  ctx.subscriptions.push(import_vscode4.languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), ">", "-", " "));
-  ctx.subscriptions.push(import_vscode4.languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()));
+  ctx.subscriptions.push(functionMapper);
+  ctx.subscriptions.push(import_vscode9.languages.registerCompletionItemProvider(INK, new DivertCompletionProvider(), ">", "-", " "));
+  ctx.subscriptions.push(import_vscode9.languages.registerDefinitionProvider(INK, new InkDivertDefinitionProvider()));
+  ctx.subscriptions.push(import_vscode9.languages.registerDefinitionProvider(INK, new InkFunctionDefinitionProvider()));
+  ctx.subscriptions.push(import_vscode9.languages.registerDefinitionProvider(INK, new InkVariableDefinitionProvider()));
 }
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   activate
 });
-//# sourceMappingURL=extension.js.map
+//# sourceMappingURL=Extension.js.map

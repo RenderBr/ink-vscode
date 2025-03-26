@@ -1,7 +1,7 @@
 import { defineConfig } from 'tsup'
 
 export default defineConfig({
-  entry: ['src/extension.ts'],
+  entry: ['src/Extension.ts'],
   outDir: 'dist',
   format: ['cjs'],
   target: 'node18',
